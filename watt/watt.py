@@ -20,8 +20,7 @@ import termios
 import thread
 from time import sleep
 import tty
-from api import (Effect, INTERVAL_MAP, STOMP_BYPASS, STOMP_ENABLE, MUTE,
-                 WattProgram)
+from api import *  # pylint: disable=unused-wildcard-import,wildcard-import
 from banks import *  # pylint: disable=unused-wildcard-import,wildcard-import
 
 TESTFILE = './watt.out'
@@ -31,6 +30,23 @@ NODEV_BUFFER_MSECS = 2 * LOOP_SLEEP_MSECS
 
 # Controls
 BPM_OFFSET = 0
+WATT = None
+
+KEYBOARD_MAP = {
+    'a': P1,
+    'w': MIN2,
+    's': MAJ2,
+    'e': MIN3,
+    'd': MAJ3,
+    'f': P4,
+    't': AUG4,
+    'g': P5,
+    'y': MIN6,
+    'h': MAJ6,
+    'u': MIN7,
+    'j': MAJ7,
+    'k': P8,
+    }
 
 # the buffer must be longer than the loop sleep or starvation will occur
 assert LOOP_BUFFER_MSECS >= LOOP_SLEEP_MSECS * 2
@@ -126,8 +142,10 @@ class WattOutput(pygame.midi.Output):
         if 'toe' in command:
             if type(command['toe']) is str:
                 if command['toe'] not in INTERVAL_MAP[self.effect]:
-                    raise Exception
-                toe = INTERVAL_MAP[self.effect][command['toe']]
+                    print 'not in interval map\r'
+                    toe = self.toe
+                else:
+                    toe = INTERVAL_MAP[self.effect][command['toe']]
             else:
                 toe = command['toe']
             if toe != self.toe or force:
@@ -160,17 +178,26 @@ def wait_for_input():
     """Get a single character of input, validate
     """
     global BPM_OFFSET  # pylint: disable=global-statement
-    while True:
-        key = sys.stdin.read(1)
-        if key == '-' or key == '_':
-            BPM_OFFSET -= 10
-        elif key == '=' or key == '+':
-            BPM_OFFSET += 10
-        else:
-            print 'received key ' + key + ': exiting\r'
-            # exit immediately on unmapped key
-            thread.interrupt_main()
-            break
+    try:
+        while True:
+            key = sys.stdin.read(1)
+            if key in '-_':
+                BPM_OFFSET -= 10
+            elif key in '=+':
+                BPM_OFFSET += 10
+            elif key in KEYBOARD_MAP:
+                WATT.write_cmd({'toe': KEYBOARD_MAP[key]},
+                               WATT.last_timestamp + 10)
+            elif key not in 'qwertyuiopasdfghjklzxcvbnm':
+                print 'received key ' + key + ': exiting\r'
+                # exit immediately on unmapped key
+                thread.interrupt_main()
+                break
+    # failing to catch an exception here causes the terminal to hang, hence
+    # the bare except
+    except:  # pylint: disable=bare-except
+        print 'Exception in input handler', sys.exc_info()[0]
+        thread.interrupt_main()
 
 def play_loop(watt, prog, count):
     """Queue commands
@@ -200,11 +227,12 @@ def play_loop(watt, prog, count):
 def main(args):
     """Parse arguments, set up terminal, call main loop
     """
+    global WATT  # pylint: disable=global-statement
 
     parser = OptionParser(description=__doc__)
     parser.add_option("-c", "--count", default='-1',
                       help="iterations to run")
-    parser.add_option("-p", "--program", default='default',
+    parser.add_option("-p", "--program", default=None,
                       help="specify program")
     parser.add_option("-v", "--verbose", action="store_true",
                       help="verbose mode")
@@ -216,14 +244,13 @@ def main(args):
     for cls in WattProgram.__subclasses__():  # pylint: disable=no-member
         programs[cls.name] = cls
 
-    if options.program not in programs:
+    if options.program is not None and options.program not in programs:
         print 'Program %s not found in path' % options.program
         return -1
 
     # Set the terminal to unbuffered, to catch a single keypress
     infd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(infd)
-    watt = None
     try:
         # change TTY settings (reverting them if an exception occurs)
         tty.setraw(infd)
@@ -231,14 +258,21 @@ def main(args):
         # input thread
         thread.start_new_thread(wait_for_input, tuple())
 
-        watt = WattOutput(verbose=options.verbose)
-        play_loop(watt, programs[options.program](), int(options.count))
+        WATT = WattOutput(verbose=options.verbose)
+        if options.program is not None:
+            play_loop(WATT, programs[options.program](), int(options.count))
+        else:
+            WATT.write_cmd({'effect': Effect.upOctave,
+                            'stomp': STOMP_ENABLE,
+                            'toe': P1}, WATT.last_timestamp + 10)
+            while True:
+                sleep(1)
     except (KeyboardInterrupt, SystemExit):
         # return term to normal state before exception is displayed
         termios.tcsetattr(infd, termios.TCSADRAIN, old_settings)
     finally:
-        if watt:
-            watt.stop()
+        if WATT:
+            WATT.stop()
         # always return term to normal state
         termios.tcsetattr(infd, termios.TCSADRAIN, old_settings)
 
