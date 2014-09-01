@@ -1,10 +1,6 @@
 #!/bin/bash
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd $REPO_DIR
+cd $REPO_DIR/watt
 python_src=$(git ls-files | grep ".py$")
-for src in $python_src
-do
-    echo $src
-    pylint --rcfile=./pylint.rc $src
-done
+pylint --rcfile=$REPO_DIR/pylint.rc $python_src
