@@ -29,6 +29,9 @@ LOOP_BUFFER_MSECS = 3 * 1000
 LOOP_SLEEP_MSECS = 100
 NODEV_BUFFER_MSECS = 2 * LOOP_SLEEP_MSECS
 
+# Controls
+BPM_OFFSET = 0
+
 # the buffer must be longer than the loop sleep or starvation will occur
 assert LOOP_BUFFER_MSECS >= LOOP_SLEEP_MSECS * 2
 
@@ -156,10 +159,18 @@ class WattOutput(pygame.midi.Output):
 def wait_for_input():
     """Get a single character of input, validate
     """
-    key = sys.stdin.read(1)
-    print 'received key ' + key + ': exiting\r'
-    # exit immediately on key break
-    thread.interrupt_main()
+    global BPM_OFFSET  # pylint: disable=global-statement
+    while True:
+        key = sys.stdin.read(1)
+        if key == '-' or key == '_':
+            BPM_OFFSET -= 10
+        elif key == '=' or key == '+':
+            BPM_OFFSET += 10
+        else:
+            print 'received key ' + key + ': exiting\r'
+            # exit immediately on unmapped key
+            thread.interrupt_main()
+            break
 
 def play_loop(watt, prog, count):
     """Queue commands
@@ -170,6 +181,8 @@ def play_loop(watt, prog, count):
     else:
         buffer_msecs = LOOP_BUFFER_MSECS
 
+    default_bpm = prog.bpm
+
     # Need some time to let initialization complete
     consumed_time = pygame.midi.time() + buffer_msecs
 
@@ -178,9 +191,9 @@ def play_loop(watt, prog, count):
         # sleep when the buffer is full
         while consumed_time > pygame.midi.time() + buffer_msecs:
             sleep(.1)
+        prog.bpm = max(1, default_bpm + BPM_OFFSET)
         watt.write_program(consumed_time, prog)
-        consumed_time += watt.beat_to_ts(prog.bpm, prog.beats,
-                                         prog.measures, 0)
+        consumed_time += watt.beat_to_ts(prog.bpm, prog.beats, prog.measures, 0)
         if count > 0:
             count -= 1
 
