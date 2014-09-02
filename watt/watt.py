@@ -33,8 +33,6 @@ NODEV_BUFFER_SECS = 2 * LOOP_SLEEP_SECS
 assert LOOP_BUFFER_SECS >= LOOP_SLEEP_SECS * 2
 
 # Controls
-BPM_OFFSET = 0
-
 KEYBOARD_MAP = {
     'a': P1,
     'w': MIN2,
@@ -182,7 +180,7 @@ def write_program(watt, cmd_q, start_time, prog):
 # Threads
 #
 
-def program_thread(watt, cmd_q, stop_event, prog, count):
+def program_thread(watt, cmd_q, prog_q, stop_event, prog, count):
     """Generate commands from a program and push them onto the queue
     """
     # do not queue up much ahead of time without a real device with real latency
@@ -190,8 +188,6 @@ def program_thread(watt, cmd_q, stop_event, prog, count):
         buffer_secs = NODEV_BUFFER_SECS
     else:
         buffer_secs = LOOP_BUFFER_SECS
-
-    default_bpm = prog.bpm
 
     # Need some time to let initialization complete
     consumed_time = pygame.midi.time() + buffer_secs * 1000
@@ -206,22 +202,31 @@ def program_thread(watt, cmd_q, stop_event, prog, count):
         if stop_event.is_set():
             break
 
-        prog.bpm = max(1, default_bpm + BPM_OFFSET)
+        # handle program commands from input
+        while not prog_q.empty():
+            cmd = prog_q.get()
+            if 'bpm' in cmd:
+                if cmd['bpm'] == '+':
+                    prog.bpm = prog.bpm + 10
+                elif cmd['bpm'] == '-':
+                    prog.bpm = max(10, prog.bpm - 10)
+
+        # note: watt would be more responsive if the entire program was not
+        # queued at once, and instead each beat was queued as needed.
         write_program(watt, cmd_q, consumed_time, prog)
         consumed_time += watt.beat_to_ts(prog.bpm, prog.beats, prog.measures, 0)
         if count > 0:
             count -= 1
 
-def input_thread(watt, cmd_q):
+def input_thread(watt, cmd_q, prog_q):
     """Get characters from stdin, push the resulting commands onto the queue
     """
-    global BPM_OFFSET  # pylint: disable=global-statement
     while True:
         key = sys.stdin.read(1)
         if key in '-_':
-            BPM_OFFSET -= 10
+            prog_q.put({'bpm': '-'})
         elif key in '=+':
-            BPM_OFFSET += 10
+            prog_q.put({'bpm': '+'})
         elif key in KEYBOARD_MAP:
             cmd_q.put({'cmd': {'toe': KEYBOARD_MAP[key]},
                        'time': watt.last_timestamp + 10})
@@ -246,6 +251,7 @@ def run_threads(watt, programs, program, count):
     """Initialize queue, run threads
     """
     cmd_q = Queue()
+    prog_q = Queue()
     program_stop_event = threading.Event()
     command_stop_event = threading.Event()
 
@@ -257,7 +263,8 @@ def run_threads(watt, programs, program, count):
     # program thread
     if program is not None:
         p_thread = threading.Thread(target=program_thread,
-                                    args=(watt, cmd_q, program_stop_event,
+                                    args=(watt, cmd_q, prog_q,
+                                          program_stop_event,
                                           programs[program](),
                                           int(count)))
         p_thread.start()
@@ -270,7 +277,7 @@ def run_threads(watt, programs, program, count):
                    'time': watt.last_timestamp + 10})
 
     # use the main thread for the input thread
-    input_thread(watt, cmd_q)
+    input_thread(watt, cmd_q, prog_q)
 
     # signal program generation to stop when the input thread exits
     if program is not None:
