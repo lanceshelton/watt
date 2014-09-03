@@ -16,6 +16,7 @@ from optparse import OptionParser
 import pygame
 import pygame.midi
 from Queue import Queue
+import string
 import sys
 import termios
 import threading
@@ -310,10 +311,9 @@ def main(args):
     """Parse arguments, set up terminal, call main loop
     """
     parser = OptionParser(description=__doc__)
-    parser.add_option("-c", "--count", default='-1',
-                      help="iterations to run")
-    parser.add_option("-p", "--program", default=None,
-                      help="specify program")
+    parser.add_option("-c", "--count", default='-1', help="iterations to run")
+    parser.add_option("-l", "--list", action="store_true", help="list programs")
+    parser.add_option("-p", "--program", default=None, help="specify program")
     parser.add_option("-v", "--verbose", action="store_true",
                       help="verbose mode")
 
@@ -323,6 +323,10 @@ def main(args):
     programs = {}
     for cls in WattProgram.__subclasses__():  # pylint: disable=no-member
         programs[cls.name] = cls
+
+    if options.list:
+        print string.join(programs.keys(), '\n')
+        return 0
 
     if options.program is not None and options.program not in programs:
         print 'Program %s not found in path' % options.program
