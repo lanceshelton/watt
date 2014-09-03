@@ -229,6 +229,7 @@ def input_thread(watt, cmd_q, prog_q):
         elif key in '=+':
             prog_q.put({'bpm': '+'})
         elif key in KEYBOARD_MAP:
+            sys.stdout.write(KEYBOARD_MAP[key] + ' ')
             cmd_q.put({'cmd': {'toe': KEYBOARD_MAP[key]},
                        'time': watt.last_timestamp + 10})
         # any non-alphabet character exits
