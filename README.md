@@ -62,7 +62,7 @@ These will map to the following intervals from the input pitch:
 
 Composition
 ---
-watt programs are not easy to create yet, but there are a few tricks:
+watt programs are not easy to create yet, but there are a couple of tricks:
 
 - Feed a tone generator into the pedal while composing (a looping pedal works great for this)
 - Use the live keyboard to write melodies and sequences
