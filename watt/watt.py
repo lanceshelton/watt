@@ -232,6 +232,9 @@ def input_thread(watt, cmd_q, prog_q):
             sys.stdout.write(KEYBOARD_MAP[key] + ' ')
             cmd_q.put({'cmd': {'toe': KEYBOARD_MAP[key]},
                        'time': watt.last_timestamp + 10})
+        elif key == '\r':
+            # useful in composition to break up a sequence with a return
+            print '\r\n'
         # any non-alphabet character exits
         elif key not in 'qwertyuiopasdfghjklzxcvbnm':
             print 'received key ' + key + ': exiting\r'
@@ -279,7 +282,11 @@ def run_threads(watt, programs, program, count):
                    'time': watt.last_timestamp + 10})
 
     # use the main thread for the input thread
-    input_thread(watt, cmd_q, prog_q)
+    try:
+        input_thread(watt, cmd_q, prog_q)
+    except Exception as e:
+        print e
+
 
     # signal program generation to stop when the input thread exits
     if program is not None:
