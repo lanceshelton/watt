@@ -48,6 +48,11 @@ KEYBOARD_MAP = {
     'u': MIN7,
     'j': MAJ7,
     'k': P8,
+    'o': MIN9,
+    'l': MAJ9,
+    'p': MIN10,
+    ';': MAJ10,
+    '\'': P11,
     }
 
 #
@@ -219,23 +224,57 @@ def program_thread(watt, cmd_q, prog_q, stop_event, prog, count):
         if count > 0:
             count -= 1
 
+def key_change(key, offset):
+    """Shift a pitch up or down by an offset
+    """
+    if key not in CHROMATIC:
+        print 'key not in chromatic: ' + str(key) + '\r'
+        return None
+    idx = CHROMATIC.index(key) + offset
+    if idx >= 0 and idx < len(CHROMATIC):
+        return CHROMATIC[idx]
+    else:
+        return None
+
 def input_thread(watt, cmd_q, prog_q):
     """Get characters from stdin, push the resulting commands onto the queue
     """
+    offset = 0
     while True:
         key = sys.stdin.read(1)
+        # beats per minute
         if key in '-_':
             prog_q.put({'bpm': '-'})
         elif key in '=+':
             prog_q.put({'bpm': '+'})
+        # key change
+        elif key in '[]1234':
+            if key == '[':
+                offset = max(-24, offset - 1)
+            elif key == ']':
+                offset = min(24, offset + 1)
+            else:
+                offset = {'1': -24, '2': -12, '3': 0, '4': 12}[key]
+            print 'key change to %d\r' % offset
+        # keyboard
         elif key in KEYBOARD_MAP:
-            sys.stdout.write(KEYBOARD_MAP[key] + ' ')
-            cmd_q.put({'cmd': {'toe': KEYBOARD_MAP[key]},
-                       'time': watt.last_timestamp + 10})
+            keyin = KEYBOARD_MAP[key]
+            if offset == 0:
+                keyout = keyin
+            else:
+                keyout = key_change(keyin, offset)
+            if keyout is not None:
+                sys.stdout.write(keyin + ' ')
+                cmd = {'toe': keyout}
+                if CHROMATIC.index(keyout) > CHROMATIC.index(P1):
+                    cmd['effect'] = Effect.up2Octaves
+                if CHROMATIC.index(keyout) < CHROMATIC.index(P1):
+                    cmd['effect'] = Effect.down2Octaves
+                cmd_q.put({'cmd': cmd, 'time': watt.last_timestamp + 10})
         elif key == '\r':
             # useful in composition to break up a sequence with a return
             print '\r\n'
-        # any non-alphabet character exits
+        # any unmapped non-alphabet character exits
         elif key not in 'qwertyuiopasdfghjklzxcvbnm':
             print 'received key ' + key + ': exiting\r'
             # exit immediately on unmapped key
@@ -276,7 +315,7 @@ def run_threads(watt, programs, program, count):
     else:
         # initialize to upOctave if no program is specified.  This effect works
         # well with live keyboard input
-        cmd_q.put({'cmd': {'effect': Effect.upOctave,
+        cmd_q.put({'cmd': {'effect': Effect.up2Octaves,
                           'stomp': STOMP_ENABLE,
                           'toe': P1},
                    'time': watt.last_timestamp + 10})
@@ -284,32 +323,30 @@ def run_threads(watt, programs, program, count):
     # use the main thread for the input thread
     try:
         input_thread(watt, cmd_q, prog_q)
-    except Exception as e:
-        print e
+    # clean up threads regardless
+    finally:
+        # signal program generation to stop when the input thread exits
+        if program is not None:
+            program_stop_event.set()
 
+            # wait for the last program loop to finish (so that the next MUTE
+            # command will be the last scheduled command
+            watt.wait_last()
+            p_thread.join()
 
-    # signal program generation to stop when the input thread exits
-    if program is not None:
-        program_stop_event.set()
+        # signal the command thread to stop after the program has completed
+        command_stop_event.set()
 
-        # wait for the last program loop to finish (so that the next MUTE
-        # command will be the last scheduled command
-        watt.wait_last()
-        p_thread.join()
+        # This is a little odd.  The command thread does not detect the stop
+        # event because it is waiting on an event.  We need to give it one last
+        # command to mute the device anyway, so this also serves the purpose of
+        # waking the command thread so that it will detect the stop event.
+        cmd_q.put({'cmd': {'effect': Effect.diveBomb,
+                        'stomp': STOMP_ENABLE,
+                        'toe': MUTE},
+                'time': watt.last_timestamp + 10})
 
-    # signal the command thread to stop after the program has completed
-    command_stop_event.set()
-
-    # This is a little odd.  The command thread does not detect the stop
-    # event because it is waiting on an event.  We need to give it one last
-    # command to mute the device anyway, so this also serves the purpose of
-    # waking the command thread so that it will detect the stop event.
-    cmd_q.put({'cmd': {'effect': Effect.diveBomb,
-                       'stomp': STOMP_ENABLE,
-                       'toe': MUTE},
-               'time': watt.last_timestamp + 10})
-
-    c_thread.join()
+        c_thread.join()
 
 #
 # Setup
