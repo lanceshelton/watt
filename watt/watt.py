@@ -72,6 +72,7 @@ class WattOutput(pygame.midi.Output):
         pygame.init()
         pygame.midi.init()
         self.verbose = verbose
+        self.latency = latency
         self.port = pygame.midi.get_default_output_id()
         self.fdev = None
         # -1 means no device detected, use file device
@@ -113,15 +114,17 @@ class WattOutput(pygame.midi.Output):
             self.close()
         pygame.midi.quit()
 
-    def write_out(self, byte_array, timestamp):
+    def write_out(self, byte_array, timestamp=None):
         """Write out to midi device
         """
-        if self.verbose:
-            print '[%s] %s %s\r' % (pygame.midi.time(), byte_array, timestamp)
-        if self.fdev is not None:
-            self.fdev.write('%s %s\n' % (byte_array, timestamp))
+        if timestamp is None:
+            timestamp = pygame.midi.time() - self.latency
         if self.port != -1:
             self.write([[byte_array, timestamp]])
+        if self.fdev is not None:
+            self.fdev.write('%s %s\n' % (byte_array, timestamp))
+        if self.verbose:
+            print '[%s] %s %s\r' % (pygame.midi.time(), byte_array, timestamp)
         self.update_last_timestamp(timestamp)
 
     def write_cmd(self, command):
@@ -130,12 +133,6 @@ class WattOutput(pygame.midi.Output):
         cmd = command['cmd']
         timestamp = command['time']
         force = True if 'force' in command and command['force'] else False
-        delay = 0
-        if 'stomp' in cmd:
-            if cmd['stomp'] != self.stomp or force:
-                self.stomp = cmd['stomp']
-                self.write_out([0xb0, 0, cmd['stomp']], timestamp)
-                #delay += 1
         if 'effect' in cmd:
             if cmd['effect'] != self.effect or force:
                 self.effect = effect = cmd['effect']
@@ -144,9 +141,10 @@ class WattOutput(pygame.midi.Output):
                 # but bypassed.
                 if 'stomp' in cmd and cmd['stomp'] == STOMP_BYPASS:
                     effect = effect + 16
+                    # no need for the later stomp command if effect sets it
+                    self.stomp = cmd['stomp']
 
-                self.write_out([0xc0, effect], timestamp + delay)
-                #delay += 1
+                self.write_out([0xc0, effect], timestamp)
         if 'toe' in cmd:
             if type(cmd['toe']) is str:
                 if cmd['toe'] not in INTERVAL_MAP[self.effect]:
@@ -157,8 +155,12 @@ class WattOutput(pygame.midi.Output):
             else:
                 toe = cmd['toe']
             if toe != self.toe or force:
-                self.write_out([0xb0, 11, toe], timestamp + delay)
+                self.write_out([0xb0, 11, toe], timestamp)
                 self.toe = toe
+        if 'stomp' in cmd:
+            if cmd['stomp'] != self.stomp or force:
+                self.stomp = cmd['stomp']
+                self.write_out([0xb0, 0, cmd['stomp']], timestamp)
 
     @staticmethod
     def beat_to_ts(bpm, beats, measure, beat):
@@ -280,7 +282,8 @@ def input_thread(watt, cmd_q, prog_q):
                         cmd['effect'] = Effect.down2Octaves
                     else:
                         cmd['effect'] = Effect.diveBomb
-                cmd_q.put({'cmd': cmd, 'time': watt.last_timestamp + 10})
+                #cmd_q.put({'cmd': cmd, 'time': watt.last_timestamp + 10})
+                cmd_q.put({'cmd': cmd, 'time': None})
         elif key == '\r':
             # useful in composition to break up a sequence with a return
             print '\r\n'
@@ -301,13 +304,26 @@ def command_thread(watt, cmd_q, stop_event):
         if stop_event.is_set():
             break
 
-def run_threads(watt, programs, program, count):
+def sustain_thread(watt, cmd_q, stop_event, sustain):
+    while not stop_event.is_set():
+        if watt.last_timestamp + sustain * 1000 < pygame.midi.time() - watt.latency and (
+                watt.effect != Effect.diveBomb or
+                watt.stomp != STOMP_ENABLE or
+                watt.toe != MUTE):
+            cmd_q.put({'cmd': {'effect': Effect.diveBomb,
+                        'stomp': STOMP_ENABLE,
+                        'toe': MUTE},
+                        'time': watt.last_timestamp + sustain * 1000})
+        sleep(sustain / 10)
+
+def run_threads(watt, programs, program, count, sustain):
     """Initialize queue, run threads
     """
     cmd_q = Queue()
+    command_stop_event = threading.Event()
     prog_q = Queue()
     program_stop_event = threading.Event()
-    command_stop_event = threading.Event()
+    p_thread = None
 
     # command thread
     c_thread = threading.Thread(target=command_thread,
@@ -320,7 +336,7 @@ def run_threads(watt, programs, program, count):
                                     args=(watt, cmd_q, prog_q,
                                           program_stop_event,
                                           programs[program](),
-                                          int(count)))
+                                          count))
         p_thread.start()
     else:
         # initialize to upOctave if no program is specified.  This effect works
@@ -329,6 +345,11 @@ def run_threads(watt, programs, program, count):
                           'stomp': STOMP_ENABLE,
                           'toe': P1},
                    'time': watt.last_timestamp + 10})
+        if sustain != -1:
+            p_thread = threading.Thread(target=sustain_thread,
+                                        args=(watt, cmd_q, program_stop_event,
+                                              sustain))
+            p_thread.start()
 
     # use the main thread for the input thread
     try:
@@ -336,7 +357,7 @@ def run_threads(watt, programs, program, count):
     # clean up threads regardless
     finally:
         # signal program generation to stop when the input thread exits
-        if program is not None:
+        if p_thread is not None:
             program_stop_event.set()
 
             # wait for the last program loop to finish (so that the next MUTE
@@ -369,6 +390,8 @@ def main(args):
     parser.add_option("-c", "--count", default='-1', help="iterations to run")
     parser.add_option("-l", "--list", action="store_true", help="list programs")
     parser.add_option("-p", "--program", default=None, help="specify program")
+    parser.add_option("-s", "--sustain", default='-1',
+                      help="specify sustain time in seconds (-1 is infinite)")
     parser.add_option("-v", "--verbose", action="store_true",
                       help="verbose mode")
 
@@ -397,7 +420,8 @@ def main(args):
         tty.setraw(infd)
 
         # main thread execution
-        run_threads(watt, programs, options.program, options.count)
+        run_threads(watt, programs, options.program, int(options.count),
+                    float(options.sustain))
     except (KeyboardInterrupt, SystemExit):
         # return term to normal state before exception is displayed
         termios.tcsetattr(infd, termios.TCSADRAIN, old_settings)
