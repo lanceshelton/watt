@@ -113,7 +113,9 @@ D_MIN21 = 'Dm21'
 D_MAJ21 = 'DM21'
 
 # scales
-CHROMATIC = [D_P15, D_MAJ14, D_MIN14, D_MAJ13, D_MIN13, D_P12, D_AUG11, D_P11,
+CHROMATIC = [D_MAJ21, D_MIN21, D_MAJ20, D_P19, D_AUG18, D_P18, D_MAJ17, D_MIN17,
+             D_MAJ16, D_MIN16,
+             D_P15, D_MAJ14, D_MIN14, D_MAJ13, D_MIN13, D_P12, D_AUG11, D_P11,
              D_MAJ10, D_MIN10, D_MAJ9, D_MIN9, D_P8, D_MAJ7, D_MIN7, D_MAJ6,
              D_MIN6, D_P5, D_AUG4, D_P4, D_MAJ3, D_MIN3, D_MAJ2, D_MIN2,
              P1, MIN2, MAJ2, MIN3, MAJ3, P4, AUG4, P5, MIN6, MAJ6, MIN7, MAJ7,
@@ -158,17 +160,16 @@ INTERVAL_MAP = {
         P5: 64, MIN6: 76, MAJ6: 88, MIN7: 100, MAJ7: 114, P8: 127,
     },
     Effect.downOctave : {
-        # Untuned guesses
-        P1: 0, D_MIN2: 8, D_MAJ2: 16, D_MIN3: 25, D_MAJ3: 34, D_P4: 43,
-        D_AUG4: 53, D_P5: 64, D_MIN6: 76, D_MAJ6: 88, D_MIN7: 100, D_MAJ7: 114,
+        P1: 0, D_MIN2: 14, D_MAJ2: 28, D_MIN3: 41, D_MAJ3: 53, D_P4: 64,
+        D_AUG4: 75, D_P5: 85, D_MIN6: 95, D_MAJ6: 104, D_MIN7: 112, D_MAJ7: 120,
         D_P8: 127,
     },
     Effect.down2Octaves : {
-        P1: 0, D_MIN2: 3, D_MAJ2: 5, D_MIN3: 8, D_MAJ3: 11, D_P4: 14,
-        D_AUG4: 18, D_P5: 21, D_MIN6: 25, D_MAJ6: 29, D_MIN7: 33, D_MAJ7: 38,
-        D_P8: 43, D_MIN9: 48, D_MAJ9: 53, D_MIN10: 59, D_MAJ10: 65, D_P11: 71,
-        D_AUG11: 78, D_P12: 85, D_MIN13: 93, D_MAJ13: 101, D_MIN14: 110,
-        D_MAJ14: 119, D_P15: 127
+        P1: 0, D_MIN2: 9, D_MAJ2: 18, D_MIN3: 27, D_MAJ3: 35, D_P4: 43,
+        D_AUG4: 50, D_P5: 57, D_MIN6: 63, D_MAJ6: 69, D_MIN7: 75, D_MAJ7: 80,
+        D_P8: 85, D_MIN9: 90, D_MAJ9: 95, D_MIN10: 99, D_MAJ10: 103, D_P11: 107,
+        D_AUG11: 110, D_P12: 114, D_MIN13: 117, D_MAJ13: 120, D_MIN14: 123,
+        D_MAJ14: 125, D_P15: 127
     },
     Effect.diveBomb: {
         P1: 0, D_MIN2: 8, D_MAJ2: 16, D_MIN3: 23, D_MAJ3: 30, D_P4: 37,

@@ -7,8 +7,11 @@ Running a program:
 python ./watt.py -p arp
 
 Testing from the command line:
+from watt import *
+from api import *
 watt = WattOutput(verbose=True)
-watt.write_cmd({'cmd': command, 'time': watt.last_timestamp + 10})
+watt.write_cmd({'cmd': {'effect': Effect.down2Octaves, 'toe': D_P8},
+                'time': watt.last_timestamp + 10})
 watt.stop()
 """
 
@@ -248,13 +251,13 @@ def input_thread(watt, cmd_q, prog_q):
         elif key in '=+':
             prog_q.put({'bpm': '+'})
         # key change
-        elif key in '[]1234':
+        elif key in '[]12345':
             if key == '[':
                 offset = max(-24, offset - 1)
             elif key == ']':
                 offset = min(24, offset + 1)
             else:
-                offset = {'1': -24, '2': -12, '3': 0, '4': 12}[key]
+                offset = {'1': -36, '2': -24, '3': -12, '4': 0, '5': 12}[key]
             print 'key change to %d\r' % offset
         # keyboard
         elif key in KEYBOARD_MAP:
@@ -266,10 +269,17 @@ def input_thread(watt, cmd_q, prog_q):
             if keyout is not None:
                 sys.stdout.write(keyin + ' ')
                 cmd = {'toe': keyout}
-                if CHROMATIC.index(keyout) > CHROMATIC.index(P1):
+                idx = CHROMATIC.index(keyout)
+                if idx > CHROMATIC.index(P1):
                     cmd['effect'] = Effect.up2Octaves
-                if CHROMATIC.index(keyout) < CHROMATIC.index(P1):
-                    cmd['effect'] = Effect.down2Octaves
+                # P1 is accurately played in any of these patches.  By not
+                # reassigning the patch for P1, both ascending and descending
+                # scales can be completed without a patch switch.
+                elif idx < CHROMATIC.index(P1):
+                    if idx >= CHROMATIC.index(D_P15):
+                        cmd['effect'] = Effect.down2Octaves
+                    else:
+                        cmd['effect'] = Effect.diveBomb
                 cmd_q.put({'cmd': cmd, 'time': watt.last_timestamp + 10})
         elif key == '\r':
             # useful in composition to break up a sequence with a return
