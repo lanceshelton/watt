@@ -253,7 +253,7 @@ def input_thread(watt, cmd_q, prog_q):
         # key change
         elif key in '[]12345':
             if key == '[':
-                offset = max(-24, offset - 1)
+                offset = max(-36, offset - 1)
             elif key == ']':
                 offset = min(24, offset + 1)
             else:
